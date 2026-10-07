@@ -7,9 +7,18 @@ from database.database import Base
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # Primary Key
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
 
-    name = Column(String(100), nullable=False)
+    # Basic Information
+    name = Column(
+        String(100),
+        nullable=False
+    )
 
     email = Column(
         String(150),
@@ -23,12 +32,14 @@ class User(Base):
         nullable=False
     )
 
+    # User Role
     role = Column(
         String(20),
         default="farmer",
         nullable=False
     )
 
+    # Language & Location
     language = Column(
         String(20),
         default="gu",
@@ -51,11 +62,34 @@ class User(Base):
         nullable=True
     )
 
+    # Farmer Profile Information
+    main_crop = Column(
+        String(100),
+        nullable=True
+    )
+
+    land_area = Column(
+        String(50),
+        nullable=True
+    )
+
+    irrigation_type = Column(
+        String(100),
+        nullable=True
+    )
+
+    mobile = Column(
+        String(20),
+        nullable=True
+    )
+
+    # Account Status
     is_active = Column(
         Boolean,
         default=True
     )
 
+    # Account Creation Time
     created_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc)

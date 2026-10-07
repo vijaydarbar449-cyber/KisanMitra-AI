@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from api.auth import router as auth_router
 from api.profile import router as profile_router
+from api.ai import router as ai_router
 
 
 app = FastAPI(
@@ -19,9 +20,9 @@ app = FastAPI(
 )
 
 
-# -------------------------
-# CORS Configuration
-# -------------------------
+# ============================================================
+# CORS
+# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,17 +33,18 @@ app.add_middleware(
 )
 
 
-# -------------------------
-# API Routers
-# -------------------------
+# ============================================================
+# API ROUTERS
+# ============================================================
 
 app.include_router(auth_router)
 app.include_router(profile_router)
+app.include_router(ai_router)
 
 
-# -------------------------
-# Home
-# -------------------------
+# ============================================================
+# HOME
+# ============================================================
 
 @app.get("/")
 def home():
@@ -54,9 +56,9 @@ def home():
     }
 
 
-# -------------------------
-# Health Check
-# -------------------------
+# ============================================================
+# HEALTH CHECK
+# ============================================================
 
 @app.get("/health")
 def health_check():
@@ -67,9 +69,9 @@ def health_check():
     }
 
 
-# -------------------------
-# API Information
-# -------------------------
+# ============================================================
+# API INFORMATION
+# ============================================================
 
 @app.get("/api")
 def api_information():
@@ -92,9 +94,9 @@ def api_information():
     }
 
 
-# -------------------------
-# Project Status
-# -------------------------
+# ============================================================
+# PROJECT STATUS
+# ============================================================
 
 @app.get("/api/v1/status")
 def project_status():
@@ -104,7 +106,7 @@ def project_status():
         "authentication": "active",
         "jwt_authentication": "active",
         "user_profile": "active",
-        "ai_assistant": "planned",
+        "ai_assistant": "active",
         "rag_system": "planned",
         "weather_service": "planned",
         "market_service": "planned",
