@@ -1,74 +1,56 @@
 import os
+import time
 from pathlib import Path
+
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 
+# .env પ્રોજેક્ટના બહારના ફોલ્ડરમાં છે (KisanMitra-AI\.env)
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(ENV_PATH, override=True)
 
-# Find project root
-BASE_DIR = Path(__file__).resolve().parents[2]
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
-# Load .env from KisanMitra-AI folder
-ENV_FILE = BASE_DIR / ".env"
-load_dotenv(ENV_FILE)
+MODEL = "gemini-3.8-flash"
 
-
-# Get Gemini API key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not GEMINI_API_KEY:
-    raise RuntimeError(
-        f"GEMINI_API_KEY not found. Check your .env file: {ENV_FILE}"
-    )
-
-
-# Create Gemini client
-client = genai.Client(
-    api_key=GEMINI_API_KEY
+SYSTEM_PROMPT = (
+    "તમે KisanMitra AI છો, ગુજરાતના ખેડૂતો માટેના મદદગાર. "
+    "હંમેશા સરળ ગુજરાતીમાં, ટૂંકા અને વ્યવહારુ જવાબ આપો. "
+    "પાક, રોગ, જીવાત, ખાતર, પાણી અને હવામાન વિશે મદદ કરો. "
+    "રાસાયણિક દવાનું ચોક્કસ પ્રમાણ (મિલી/ગ્રામ) ન આપો; દવાનું નામ જણાવો અને "
+    "પ્રમાણ માટે દવાના લેબલ કે કૃષિ અધિકારીની સલાહ લેવા કહો. "
+    "દવા વાપરતી વખતે સલામતી જણાવો અને ગંભીર કેસમાં "
+    "સ્થાનિક કૃષિ અધિકારી કે કૃષિ વિજ્ઞાન કેન્દ્રનો સંપર્ક કરવાની સલાહ આપો. "
+    "ખેતી સિવાયના વિષયો પર નમ્રતાથી ના પાડો."
 )
 
+LANGUAGE_NAMES = {
+    "gu": "ગુજરાતી",
+    "hi": "હિન્દી",
+    "en": "English",
+}
 
-def generate_ai_response(
-    message: str,
-    language: str = "gu"
-) -> str:
 
-    if language == "gu":
-        instruction = """
-        તમે KisanMitra AI છો.
+def ask_gemini(prompt: str, tries: int = 3) -> str:
+    """Gemini ને પ્રશ્ન પૂછે છે. 503/429 (ભીડ) આવે તો ફરી પ્રયત્ન કરે છે."""
+    for i in range(tries):
+        try:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            )
+            return response.text
+        except Exception as e:
+            if ("503" in str(e) or "429" in str(e)) and i < tries - 1:
+                time.sleep(2 * (i + 1))
+                continue
+            raise
 
-        તમે ખેડૂતો માટે ગુજરાતી ભાષામાં સરળ,
-        ઉપયોગી અને વ્યવહારુ ખેતી સલાહ આપતા AI assistant છો.
 
-        તમે પાક, રોગ, જીવાત, પાણી, સિંચાઈ,
-        ખેતી પદ્ધતિઓ અને સરકારી યોજનાઓ અંગે
-        સામાન્ય માર્ગદર્શન આપી શકો છો.
-
-        જવાબ સરળ ગુજરાતી ભાષામાં આપો.
-        ખેડૂતને સરળતાથી સમજાય તેવી રીતે જવાબ આપો.
-        """
-
-    else:
-        instruction = """
-        You are KisanMitra AI.
-
-        You provide simple, useful and practical
-        agricultural guidance for farmers.
-
-        You can help with crops, diseases, pests,
-        irrigation, farming methods and general
-        government scheme guidance.
-
-        Give clear and practical answers.
-        """
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=f"""
-{instruction}
-
-User question:
-{message}
-"""
-    )
-
-    return response.text
+def generate_ai_response(message: str, language: str = "gu") -> str:
+    """ai.py આ ફંક્શન બોલાવે છે. ભાષા મુજબ જવાબ આપે છે."""
+    lang = LANGUAGE_NAMES.get(language, "ગુજરાતી")
+    prompt = f"{message}\n\n(જવાબ {lang} ભાષામાં આપો.)"
+    return ask_gemini(prompt)
