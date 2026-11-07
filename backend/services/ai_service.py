@@ -31,14 +31,24 @@ LANGUAGE_NAMES = {
     "en": "English",
 }
 
+IMAGE_PROMPT = (
+    "આ પાક/છોડના પાનનો ફોટો છે. સરળ ગુજરાતીમાં જણાવો: "
+    "1) છોડમાં કયો રોગ, જીવાત કે ઉણપ હોઈ શકે, "
+    "2) તેના લક્ષણો ફોટામાં શું દેખાય છે, "
+    "3) ઘરેલું/જૈવિક ઉપાય, "
+    "4) રાસાયણિક દવાનું નામ (પ્રમાણ ન આપો, લેબલ વાંચવા કહો). "
+    "ફોટો સ્પષ્ટ ન હોય કે છોડનો ન હોય તો તે જણાવો અને ખાતરીપૂર્વક નિદાન ન કરો. "
+    "અંતે કૃષિ અધિકારી કે KVK ની સલાહ લેવા કહો."
+)
 
-def ask_gemini(prompt: str, tries: int = 3) -> str:
-    """Gemini ને પ્રશ્ન પૂછે છે. 503/429 (ભીડ) આવે તો ફરી પ્રયત્ન કરે છે."""
+
+def _call_gemini(contents, tries: int = 3) -> str:
+    """Gemini ને બોલાવે છે. 503/429 (ભીડ) આવે તો ફરી પ્રયત્ન કરે છે."""
     for i in range(tries):
         try:
             response = client.models.generate_content(
                 model=MODEL,
-                contents=prompt,
+                contents=contents,
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
             return response.text
@@ -49,8 +59,26 @@ def ask_gemini(prompt: str, tries: int = 3) -> str:
             raise
 
 
+def ask_gemini(prompt: str, tries: int = 3) -> str:
+    """સાદો ટેક્સ્ટ પ્રશ્ન."""
+    return _call_gemini(prompt, tries)
+
+
 def generate_ai_response(message: str, language: str = "gu") -> str:
     """ai.py આ ફંક્શન બોલાવે છે. ભાષા મુજબ જવાબ આપે છે."""
     lang = LANGUAGE_NAMES.get(language, "ગુજરાતી")
     prompt = f"{message}\n\n(જવાબ {lang} ભાષામાં આપો.)"
     return ask_gemini(prompt)
+
+
+def analyze_crop_image(image_bytes: bytes, mime_type: str = "image/jpeg", question: str = "") -> str:
+    """પાકના ફોટા પરથી રોગની ઓળખ."""
+    prompt = IMAGE_PROMPT
+    if question:
+        prompt += f"\nખેડૂતનો પ્રશ્ન: {question}"
+
+    contents = [
+        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+        prompt,
+    ]
+    return _call_gemini(contents)
