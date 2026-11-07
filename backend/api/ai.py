@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from api.deps import get_current_user
 from services.ai_service import analyze_crop_image, generate_ai_response
 
 logger = logging.getLogger("uvicorn.error")
@@ -36,7 +37,10 @@ def _handle_ai_error(e: Exception):
 
 
 @router.post("/chat")
-def chat(request: ChatRequest):
+def chat(
+    request: ChatRequest,
+    current_user=Depends(get_current_user),
+):
     message = request.message.strip()
 
     if not message:
@@ -62,6 +66,7 @@ def chat(request: ChatRequest):
 def diagnose(
     image: UploadFile = File(...),
     question: str = Form(""),
+    current_user=Depends(get_current_user),
 ):
     """પાકના પાનનો ફોટો અપલોડ કરો, AI રોગ/જીવાતની ઓળખ આપશે."""
     if image.content_type not in ALLOWED_IMAGE_TYPES:
