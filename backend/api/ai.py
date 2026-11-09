@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.deps import get_current_user
 from services.ai_service import analyze_crop_image, generate_ai_response
@@ -18,9 +18,15 @@ router = APIRouter(
 )
 
 
+class ChatTurn(BaseModel):
+    role: str = Field(pattern="^(user|model)$")
+    text: str = Field(max_length=2000)
+
+
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(max_length=2000)
     language: str = "gu"
+    history: list[ChatTurn] = Field(default_factory=list, max_length=20)
 
 
 def _handle_ai_error(e: Exception):
@@ -49,7 +55,8 @@ def chat(
     try:
         reply = generate_ai_response(
             message=message,
-            language=request.language
+            language=request.language,
+            history=[turn.model_dump() for turn in request.history],
         )
     except Exception as e:
         _handle_ai_error(e)

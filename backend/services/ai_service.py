@@ -14,6 +14,9 @@ client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 MODEL = "gemini-3.8-flash"
 
+MAX_HISTORY_TURNS = 10      # પાછલા કેટલા સંદેશા યાદ રાખવા
+MAX_TURN_CHARS = 2000       # દરેક સંદેશાની મહત્તમ લંબાઈ
+
 SYSTEM_PROMPT = (
     "તમે KisanMitra AI છો, ગુજરાતના ખેડૂતો માટેના મદદગાર. "
     "હંમેશા સરળ ગુજરાતીમાં, ટૂંકા અને વ્યવહારુ જવાબ આપો. "
@@ -64,11 +67,30 @@ def ask_gemini(prompt: str, tries: int = 3) -> str:
     return _call_gemini(prompt, tries)
 
 
-def generate_ai_response(message: str, language: str = "gu") -> str:
-    """ai.py આ ફંક્શન બોલાવે છે. ભાષા મુજબ જવાબ આપે છે."""
+def generate_ai_response(message: str, language: str = "gu", history=None) -> str:
+    """ai.py આ ફંક્શન બોલાવે છે. history = [{"role": "user"/"model", "text": "..."}]"""
     lang = LANGUAGE_NAMES.get(language, "ગુજરાતી")
-    prompt = f"{message}\n\n(જવાબ {lang} ભાષામાં આપો.)"
-    return ask_gemini(prompt)
+
+    contents = []
+    for turn in (history or [])[-MAX_HISTORY_TURNS:]:
+        role = "model" if turn.get("role") == "model" else "user"
+        text = (turn.get("text") or "").strip()[:MAX_TURN_CHARS]
+        if text:
+            contents.append(
+                types.Content(role=role, parts=[types.Part.from_text(text=text)])
+            )
+
+    # વાતચીત હંમેશા user ના સંદેશાથી શરૂ થવી જોઈએ
+    while contents and contents[0].role == "model":
+        contents.pop(0)
+
+    contents.append(
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=f"{message}\n\n(જવાબ {lang} ભાષામાં આપો.)")],
+        )
+    )
+    return _call_gemini(contents)
 
 
 def analyze_crop_image(image_bytes: bytes, mime_type: str = "image/jpeg", question: str = "") -> str:
