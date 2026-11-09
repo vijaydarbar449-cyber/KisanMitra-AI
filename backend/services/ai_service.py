@@ -10,9 +10,12 @@ from google.genai import types
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(ENV_PATH, override=True)
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+client = genai.Client(
+    api_key=os.environ["GEMINI_API_KEY"],
+    http_options=types.HttpOptions(timeout=60000),  # 60 સેકન્ડ
+)
 
-MODEL = "gemini-3.8-flash"
+MODEL = "gemini-3.1-flash-lite"
 
 MAX_HISTORY_TURNS = 10      # પાછલા કેટલા સંદેશા યાદ રાખવા
 MAX_TURN_CHARS = 2000       # દરેક સંદેશાની મહત્તમ લંબાઈ

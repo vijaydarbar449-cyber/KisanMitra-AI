@@ -1,6 +1,9 @@
+from pathlib import Path
+from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timezone
+from fastapi.staticfiles import StaticFiles
 
 from api.auth import router as auth_router
 from api.profile import router as profile_router
@@ -40,6 +43,20 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(ai_router)
+
+
+# ============================================================
+# FRONTEND (KisanMitra-AI\frontend\index.html) -> http://127.0.0.1:8000/app/
+# ============================================================
+
+FRONTEND_DIR = Path(__file__).resolve().parents[1] / "frontend"
+
+if FRONTEND_DIR.is_dir():
+    app.mount(
+        "/app",
+        StaticFiles(directory=FRONTEND_DIR, html=True),
+        name="frontend",
+    )
 
 
 # ============================================================

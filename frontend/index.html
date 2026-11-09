@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KisanMitra AI</title>
+<style>
+  :root { --g:#2e7d32; --gl:#e8f5e9; --bd:#d7e3d8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans Gujarati", sans-serif; background:#f4f8f4; color:#1b2b1c; }
+  header { background:var(--g); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:1.1rem; margin:0; }
+  main { max-width:720px; margin:0 auto; padding:12px; }
+  .card { background:#fff; border:1px solid var(--bd); border-radius:12px; padding:16px; }
+  input, select, textarea, button { font:inherit; padding:10px; border-radius:8px; border:1px solid var(--bd); }
+  input, textarea { width:100%; }
+  button { background:var(--g); color:#fff; border:0; cursor:pointer; }
+  button.secondary { background:#fff; color:var(--g); border:1px solid var(--g); }
+  button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; margin-top:8px; }
+  .row > input, .row > textarea { flex:1; }
+  .stack > * { margin-top:10px; }
+  #log { height:55vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px; }
+  .msg { max-width:88%; padding:10px 12px; border-radius:12px; line-height:1.5; word-wrap:break-word; }
+  .user { align-self:flex-end; background:var(--g); color:#fff; }
+  .model { align-self:flex-start; background:var(--gl); border:1px solid var(--bd); }
+  .err { color:#b71c1c; font-size:.9rem; min-height:1.2em; }
+  .hide { display:none; }
+  .tabs { display:flex; gap:8px; margin-bottom:10px; }
+  .tabs button { flex:1; }
+  .tabs button.active { background:var(--g); color:#fff; }
+  .note { font-size:.8rem; color:#556; margin-top:10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌾 KisanMitra AI</h1>
+  <button id="logoutBtn" class="secondary hide">બહાર નીકળો</button>
+</header>
+
+<main>
+  <!-- લૉગિન / રજિસ્ટર -->
+  <section id="authView" class="card stack">
+    <div class="tabs">
+      <button id="tabLogin" class="active">લૉગિન</button>
+      <button id="tabRegister" class="secondary">નવું ખાતું</button>
+    </div>
+    <input id="name" class="hide" placeholder="તમારું નામ" autocomplete="name">
+    <input id="email" type="email" placeholder="ઇમેઇલ" autocomplete="email">
+    <input id="password" type="password" placeholder="પાસવર્ડ (6 થી 72 અક્ષર)" autocomplete="current-password">
+    <button id="authBtn">લૉગિન કરો</button>
+    <div id="authErr" class="err"></div>
+  </section>
+
+  <!-- ચેટ -->
+  <section id="chatView" class="card hide">
+    <div class="tabs">
+      <button id="tabChat" class="active">💬 પ્રશ્ન પૂછો</button>
+      <button id="tabPhoto" class="secondary">📷 ફોટો નિદાન</button>
+    </div>
+    <select id="lang">
+      <option value="gu">ગુજરાતી</option>
+      <option value="hi">हिन्दी</option>
+      <option value="en">English</option>
+    </select>
+
+    <div id="chatPane">
+      <div id="log"></div>
+      <div class="row">
+        <textarea id="msg" rows="2" placeholder="તમારો પ્રશ્ન લખો..."></textarea>
+        <button id="sendBtn">મોકલો</button>
+      </div>
+    </div>
+
+    <div id="photoPane" class="hide stack">
+      <input id="photo" type="file" accept="image/jpeg,image/png,image/webp">
+      <input id="photoQ" placeholder="પ્રશ્ન (વૈકલ્પિક), દા.ત. આ પાન પીળા કેમ પડ્યા?">
+      <button id="diagBtn">નિદાન કરો</button>
+      <div id="diagOut" class="msg model hide"></div>
+    </div>
+    <div id="chatErr" class="err"></div>
+    <div class="note">AI ની સલાહ માર્ગદર્શન માટે છે. ગંભીર સમસ્યા માટે નજીકના કૃષિ વિજ્ઞાન કેન્દ્ર (KVK) કે કૃષિ અધિકારીનો સંપર્ક કરો.</div>
+  </section>
+</main>
+
+<script>
+const API = "/api/v1";
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem("km_token") || "";
+let chatHistory = [];
+let registerMode = false;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function fmt(s) {
+  return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^\* /gm, "• ").replace(/\n/g, "<br>");
+}
+function errText(data) {
+  if (data && typeof data.detail === "string") return data.detail;
+  return "વિગતો ફરી તપાસો.";
+}
+
+function showView() {
+  const loggedIn = !!token;
+  $("authView").classList.toggle("hide", loggedIn);
+  $("chatView").classList.toggle("hide", !loggedIn);
+  $("logoutBtn").classList.toggle("hide", !loggedIn);
+}
+
+function logout() {
+  token = "";
+  sessionStorage.removeItem("km_token");
+  chatHistory = [];
+  $("log").innerHTML = "";
+  showView();
+}
+
+async function api(path, options = {}, timeoutMs = 90000) {
+  options.headers = Object.assign({}, options.headers, { Authorization: "Bearer " + token });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  options.signal = ctrl.signal;
+  try {
+    const res = await fetch(API + path, options);
+    if (res.status === 401) { logout(); throw new Error("ફરી લૉગિન કરો."); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(errText(data));
+    return data;
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("જવાબ આવવામાં બહુ સમય લાગ્યો. ફરી પ્રયત્ન કરો.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------- લૉગિન / રજિસ્ટર ----------
+function setMode(reg) {
+  registerMode = reg;
+  $("name").classList.toggle("hide", !reg);
+  $("authBtn").textContent = reg ? "ખાતું બનાવો" : "લૉગિન કરો";
+  $("tabLogin").className = reg ? "secondary" : "active";
+  $("tabRegister").className = reg ? "active" : "secondary";
+  $("authErr").textContent = "";
+}
+$("tabLogin").onclick = () => setMode(false);
+$("tabRegister").onclick = () => setMode(true);
+
+async function doLogin(email, password) {
+  const res = await fetch(API + "/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username: email, password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(errText(data));
+  token = data.access_token;
+  sessionStorage.setItem("km_token", token);
+}
+
+$("authBtn").onclick = async () => {
+  const email = $("email").value.trim();
+  const password = $("password").value;
+  $("authErr").textContent = "";
+  $("authBtn").disabled = true;
+  try {
+    if (registerMode) {
+      const res = await fetch(API + "/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: $("name").value.trim(), email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(errText(data));
+    }
+    await doLogin(email, password);
+    $("password").value = "";
+    showView();
+  } catch (e) {
+    $("authErr").textContent = e.message;
+  } finally {
+    $("authBtn").disabled = false;
+  }
+};
+$("logoutBtn").onclick = logout;
+
+// ---------- ટૅબ ----------
+function setTab(photo) {
+  $("chatPane").classList.toggle("hide", photo);
+  $("photoPane").classList.toggle("hide", !photo);
+  $("tabChat").className = photo ? "secondary" : "active";
+  $("tabPhoto").className = photo ? "active" : "secondary";
+  $("chatErr").textContent = "";
+}
+$("tabChat").onclick = () => setTab(false);
+$("tabPhoto").onclick = () => setTab(true);
+
+// ---------- ચેટ ----------
+function addMsg(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.innerHTML = fmt(text);
+  $("log").appendChild(div);
+  $("log").scrollTop = $("log").scrollHeight;
+  return div;
+}
+
+async function send() {
+  const text = $("msg").value.trim();
+  if (!text) return;
+  $("chatErr").textContent = "";
+  addMsg("user", text);
+  $("msg").value = "";
+  const waiting = addMsg("model", "વિચારી રહ્યો છું... 0 સેકન્ડ");
+  let secs = 0;
+  const ticker = setInterval(() => {
+    secs += 1;
+    waiting.textContent = "વિચારી રહ્યો છું... " + secs + " સેકન્ડ";
+  }, 1000);
+  $("sendBtn").disabled = true;
+  try {
+    const data = await api("/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, language: $("lang").value, history: chatHistory.slice(-10) }),
+    });
+    console.log("chat reply received", data);
+    clearInterval(ticker);
+    waiting.innerHTML = fmt(data.reply);
+    chatHistory.push({ role: "user", text: text.slice(0, 2000) });
+    chatHistory.push({ role: "model", text: String(data.reply || "").slice(0, 2000) });
+  } catch (e) {
+    console.error("chat error", e);
+    clearInterval(ticker);
+    waiting.remove();
+    $("chatErr").textContent = e.message;
+  } finally {
+    clearInterval(ticker);
+    $("sendBtn").disabled = false;
+  }
+}
+$("sendBtn").onclick = send;
+$("msg").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+// ---------- ફોટો નિદાન ----------
+$("diagBtn").onclick = async () => {
+  const file = $("photo").files[0];
+  $("chatErr").textContent = "";
+  if (!file) { $("chatErr").textContent = "પહેલાં ફોટો પસંદ કરો."; return; }
+  if (file.size > 5 * 1024 * 1024) { $("chatErr").textContent = "ફોટો 5 MB થી નાનો હોવો જોઈએ."; return; }
+  const form = new FormData();
+  form.append("image", file);
+  form.append("question", $("photoQ").value.trim());
+  $("diagBtn").disabled = true;
+  $("diagOut").classList.remove("hide");
+  $("diagOut").textContent = "ફોટો તપાસી રહ્યો છું...";
+  try {
+    const data = await api("/ai/diagnose", { method: "POST", body: form });
+    $("diagOut").innerHTML = fmt(data.reply);
+  } catch (e) {
+    console.error("diagnose error", e);
+    $("diagOut").classList.add("hide");
+    $("chatErr").textContent = e.message;
+  } finally {
+    $("diagBtn").disabled = false;
+  }
+};
+
+showView();
+</script>
+</body>
+</html>
