@@ -30,6 +30,10 @@
   .tabs button { flex:1; }
   .tabs button.active { background:var(--g); color:#fff; }
   .note { font-size:.8rem; color:#556; margin-top:10px; }
+  #micBtn { background:#fff; color:var(--g); border:1px solid var(--g); font-size:1.2rem; padding:10px 12px; }
+  #micBtn.listening { background:#c62828; color:#fff; border-color:#c62828; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+  #micHint { font-size:.85rem; color:var(--g); min-height:1.2em; margin-top:6px; }
 </style>
 </head>
 <body>
@@ -67,9 +71,11 @@
     <div id="chatPane">
       <div id="log"></div>
       <div class="row">
-        <textarea id="msg" rows="2" placeholder="તમારો પ્રશ્ન લખો..."></textarea>
+        <textarea id="msg" rows="2" placeholder="તમારો પ્રશ્ન લખો અથવા 🎤 દબાવી બોલો..."></textarea>
+        <button id="micBtn" title="બોલીને પ્રશ્ન પૂછો" aria-label="માઇક">🎤</button>
         <button id="sendBtn">મોકલો</button>
       </div>
+      <div id="micHint"></div>
     </div>
 
     <div id="photoPane" class="hide stack">
@@ -109,6 +115,7 @@ function showView() {
 }
 
 function logout() {
+  stopListening();
   token = "";
   sessionStorage.removeItem("km_token");
   chatHistory = [];
@@ -187,6 +194,7 @@ $("logoutBtn").onclick = logout;
 
 // ---------- ટૅબ ----------
 function setTab(photo) {
+  stopListening();
   $("chatPane").classList.toggle("hide", photo);
   $("photoPane").classList.toggle("hide", !photo);
   $("tabChat").className = photo ? "secondary" : "active";
@@ -195,6 +203,78 @@ function setTab(photo) {
 }
 $("tabChat").onclick = () => setTab(false);
 $("tabPhoto").onclick = () => setTab(true);
+
+// ---------- 🎤 અવાજથી પ્રશ્ન ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SPEECH_LANG = { gu: "gu-IN", hi: "hi-IN", en: "en-IN" };
+let recognizer = null;
+let listening = false;
+let baseText = "";
+
+function setListeningUI(on, hint) {
+  listening = on;
+  $("micBtn").classList.toggle("listening", on);
+  $("micBtn").textContent = on ? "⏹" : "🎤";
+  $("micHint").textContent = hint || "";
+}
+
+function stopListening() {
+  if (recognizer && listening) {
+    try { recognizer.stop(); } catch (e) {}
+  }
+}
+
+function startListening() {
+  $("chatErr").textContent = "";
+  recognizer = new SR();
+  recognizer.lang = SPEECH_LANG[$("lang").value] || "gu-IN";
+  recognizer.interimResults = true;
+  recognizer.continuous = false;
+  baseText = $("msg").value.trim();
+
+  recognizer.onstart = () => setListeningUI(true, "🎙️ સાંભળી રહ્યો છું... બોલો");
+  recognizer.onresult = (event) => {
+    let spoken = "";
+    for (let i = 0; i < event.results.length; i++) {
+      spoken += event.results[i][0].transcript;
+    }
+    $("msg").value = (baseText ? baseText + " " : "") + spoken;
+  };
+  recognizer.onerror = (event) => {
+    const messages = {
+      "not-allowed": "માઇકની પરવાનગી આપો (સરનામા પટ્ટીમાં 🔒 આઇકન દબાવી Microphone ને Allow કરો).",
+      "service-not-allowed": "માઇકની પરવાનગી આપો (સરનામા પટ્ટીમાં 🔒 આઇકન દબાવી Microphone ને Allow કરો).",
+      "no-speech": "કંઈ સંભળાયું નહીં. ફરી 🎤 દબાવી બોલો.",
+      "audio-capture": "માઇક મળ્યું નહીં. માઇક જોડાયેલું છે કે તપાસો.",
+      "network": "અવાજ ઓળખવા ઇન્ટરનેટ જોઈએ. ઇન્ટરનેટ તપાસો.",
+      "language-not-supported": "આ ભાષા માટે અવાજ ઓળખ ઉપલબ્ધ નથી.",
+    };
+    if (event.error !== "aborted") {
+      $("chatErr").textContent = messages[event.error] || "અવાજ ઓળખવામાં સમસ્યા આવી. ફરી પ્રયત્ન કરો.";
+    }
+  };
+  recognizer.onend = () => {
+    setListeningUI(false, $("msg").value.trim() ? "✏️ ચકાસી લો અને 'મોકલો' દબાવો." : "");
+  };
+
+  try {
+    recognizer.start();
+  } catch (e) {
+    setListeningUI(false, "");
+    $("chatErr").textContent = "માઇક શરૂ ન થઈ શક્યું. ફરી પ્રયત્ન કરો.";
+  }
+}
+
+if (!SR) {
+  $("micBtn").disabled = true;
+  $("micBtn").title = "આ બ્રાઉઝરમાં અવાજ ઓળખ ઉપલબ્ધ નથી";
+  $("micHint").textContent = "અવાજથી પ્રશ્ન માટે Chrome અથવા Edge વાપરો.";
+}
+$("micBtn").onclick = () => {
+  if (!SR) return;
+  if (listening) stopListening(); else startListening();
+};
+$("lang").onchange = () => stopListening();
 
 // ---------- ચેટ ----------
 function addMsg(role, text) {
@@ -207,9 +287,11 @@ function addMsg(role, text) {
 }
 
 async function send() {
+  stopListening();
   const text = $("msg").value.trim();
   if (!text) return;
   $("chatErr").textContent = "";
+  $("micHint").textContent = "";
   addMsg("user", text);
   $("msg").value = "";
   const waiting = addMsg("model", "વિચારી રહ્યો છું... 0 સેકન્ડ");
@@ -225,7 +307,6 @@ async function send() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: text, language: $("lang").value, history: chatHistory.slice(-10) }),
     });
-    console.log("chat reply received", data);
     clearInterval(ticker);
     waiting.innerHTML = fmt(data.reply);
     chatHistory.push({ role: "user", text: text.slice(0, 2000) });
