@@ -34,6 +34,11 @@
   #micBtn.listening { background:#c62828; color:#fff; border-color:#c62828; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.55; } }
   #micHint { font-size:.85rem; color:var(--g); min-height:1.2em; margin-top:6px; }
+  .opts { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .opts label { font-size:.9rem; cursor:pointer; display:flex; gap:6px; align-items:center; }
+  .opts input[type=checkbox] { width:auto; }
+  .speakBtn { display:block; margin-top:8px; padding:6px 12px; font-size:.9rem; background:#fff; color:var(--g); border:1px solid var(--g); }
+  .speakBtn.speaking { background:#c62828; color:#fff; border-color:#c62828; }
 </style>
 </head>
 <body>
@@ -62,11 +67,14 @@
       <button id="tabChat" class="active">💬 પ્રશ્ન પૂછો</button>
       <button id="tabPhoto" class="secondary">📷 ફોટો નિદાન</button>
     </div>
-    <select id="lang">
-      <option value="gu">ગુજરાતી</option>
-      <option value="hi">हिन्दी</option>
-      <option value="en">English</option>
-    </select>
+    <div class="opts">
+      <select id="lang">
+        <option value="gu">ગુજરાતી</option>
+        <option value="hi">हिन्दी</option>
+        <option value="en">English</option>
+      </select>
+      <label><input type="checkbox" id="autoSpeak"> 🔊 જવાબ આપમેળે બોલો</label>
+    </div>
 
     <div id="chatPane">
       <div id="log"></div>
@@ -100,7 +108,10 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 function fmt(s) {
-  return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^\* /gm, "• ").replace(/\n/g, "<br>");
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/^[ \t]*[*-][ \t]+/gm, "• ")
+    .replace(/\n/g, "<br>");
 }
 function errText(data) {
   if (data && typeof data.detail === "string") return data.detail;
@@ -116,6 +127,7 @@ function showView() {
 
 function logout() {
   stopListening();
+  stopSpeaking();
   token = "";
   sessionStorage.removeItem("km_token");
   chatHistory = [];
@@ -195,6 +207,7 @@ $("logoutBtn").onclick = logout;
 // ---------- ટૅબ ----------
 function setTab(photo) {
   stopListening();
+  stopSpeaking();
   $("chatPane").classList.toggle("hide", photo);
   $("photoPane").classList.toggle("hide", !photo);
   $("tabChat").className = photo ? "secondary" : "active";
@@ -225,6 +238,7 @@ function stopListening() {
 }
 
 function startListening() {
+  stopSpeaking();
   $("chatErr").textContent = "";
   recognizer = new SR();
   recognizer.lang = SPEECH_LANG[$("lang").value] || "gu-IN";
@@ -274,7 +288,110 @@ $("micBtn").onclick = () => {
   if (!SR) return;
   if (listening) stopListening(); else startListening();
 };
-$("lang").onchange = () => stopListening();
+
+// ---------- 🔊 જવાબ બોલીને સંભળાવવો ----------
+const TTS = window.speechSynthesis;
+let speakingBtn = null;
+
+function plainText(s) {
+  return String(s || "")
+    .replace(/\*\*/g, "")
+    .replace(/^[ \t]*[*-][ \t]+/gm, "")
+    .replace(/[#_`]/g, "")
+    .replace(/\n{2,}/g, "\n");
+}
+
+// લાંબું લખાણ નાના ટુકડામાં (Chrome લાંબા લખાણમાં વચ્ચે અટકી જાય છે)
+function splitChunks(text) {
+  const parts = text.split(/(?<=[.!?।\n])\s*/).filter((p) => p.trim());
+  const chunks = [];
+  let cur = "";
+  for (const p of parts) {
+    if (cur && (cur + " " + p).length > 160) { chunks.push(cur); cur = p; }
+    else cur = cur ? cur + " " + p : p;
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+function pickVoice(code) {
+  const voices = TTS.getVoices();
+  if (!voices.length) return { voices, voice: null };
+  const norm = (v) => v.lang.replace("_", "-").toLowerCase();
+  const voice =
+    voices.find((v) => norm(v) === code.toLowerCase()) ||
+    voices.find((v) => norm(v).startsWith(code.slice(0, 2).toLowerCase()));
+  return { voices, voice };
+}
+
+function resetSpeakButtons() {
+  document.querySelectorAll(".speakBtn").forEach((b) => {
+    b.classList.remove("speaking");
+    b.textContent = "🔊 સાંભળો";
+  });
+  speakingBtn = null;
+}
+
+function stopSpeaking() {
+  if (TTS) { try { TTS.cancel(); } catch (e) {} }
+  resetSpeakButtons();
+}
+
+function speak(text, btn) {
+  if (!TTS) {
+    $("chatErr").textContent = "આ બ્રાઉઝરમાં બોલવાની સુવિધા નથી. Chrome અથવા Edge વાપરો.";
+    return;
+  }
+  stopSpeaking();
+  $("chatErr").textContent = "";
+  const code = SPEECH_LANG[$("lang").value] || "gu-IN";
+  const { voices, voice } = pickVoice(code);
+  if (voices.length && !voice) {
+    $("chatErr").textContent =
+      "આ કમ્પ્યુટર/ફોનમાં આ ભાષાનો અવાજ ઇન્સ્ટોલ નથી. " +
+      "Windows: Settings > Time & language > Speech > Add voices માં ભાષા ઉમેરો. " +
+      "Android: Google Text-to-speech ની ભાષા ડાઉનલોડ કરો.";
+    return;
+  }
+  const chunks = splitChunks(plainText(text));
+  if (!chunks.length) return;
+
+  if (btn) { btn.classList.add("speaking"); btn.textContent = "⏹ બંધ કરો"; speakingBtn = btn; }
+  chunks.forEach((chunk, i) => {
+    const u = new SpeechSynthesisUtterance(chunk);
+    u.lang = code;
+    if (voice) u.voice = voice;
+    u.rate = 0.95;
+    if (i === chunks.length - 1) u.onend = () => { if (speakingBtn === btn) resetSpeakButtons(); };
+    u.onerror = (e) => { if (e.error !== "canceled" && e.error !== "interrupted") resetSpeakButtons(); };
+    TTS.speak(u);
+  });
+}
+
+// અવાજોની યાદી મોડી લોડ થાય છે
+if (TTS) { TTS.onvoiceschanged = () => {}; TTS.getVoices(); }
+
+function addSpeakButton(div, text) {
+  if (!TTS) return;
+  const b = document.createElement("button");
+  b.className = "speakBtn";
+  b.textContent = "🔊 સાંભળો";
+  b.onclick = () => {
+    if (speakingBtn === b) stopSpeaking(); else speak(text, b);
+  };
+  div.appendChild(b);
+  return b;
+}
+
+function showReply(div, text) {
+  div.innerHTML = fmt(text);
+  const btn = addSpeakButton(div, text);
+  if (btn && $("autoSpeak").checked) speak(text, btn);
+}
+
+$("lang").onchange = () => { stopListening(); stopSpeaking(); };
+$("autoSpeak").onchange = () => { if (!$("autoSpeak").checked) stopSpeaking(); };
+window.addEventListener("beforeunload", stopSpeaking);
 
 // ---------- ચેટ ----------
 function addMsg(role, text) {
@@ -288,6 +405,7 @@ function addMsg(role, text) {
 
 async function send() {
   stopListening();
+  stopSpeaking();
   const text = $("msg").value.trim();
   if (!text) return;
   $("chatErr").textContent = "";
@@ -308,7 +426,8 @@ async function send() {
       body: JSON.stringify({ message: text, language: $("lang").value, history: chatHistory.slice(-10) }),
     });
     clearInterval(ticker);
-    waiting.innerHTML = fmt(data.reply);
+    showReply(waiting, data.reply);
+    $("log").scrollTop = $("log").scrollHeight;
     chatHistory.push({ role: "user", text: text.slice(0, 2000) });
     chatHistory.push({ role: "model", text: String(data.reply || "").slice(0, 2000) });
   } catch (e) {
@@ -328,6 +447,7 @@ $("msg").addEventListener("keydown", (e) => {
 
 // ---------- ફોટો નિદાન ----------
 $("diagBtn").onclick = async () => {
+  stopSpeaking();
   const file = $("photo").files[0];
   $("chatErr").textContent = "";
   if (!file) { $("chatErr").textContent = "પહેલાં ફોટો પસંદ કરો."; return; }
@@ -340,7 +460,7 @@ $("diagBtn").onclick = async () => {
   $("diagOut").textContent = "ફોટો તપાસી રહ્યો છું...";
   try {
     const data = await api("/ai/diagnose", { method: "POST", body: form });
-    $("diagOut").innerHTML = fmt(data.reply);
+    showReply($("diagOut"), data.reply);
   } catch (e) {
     console.error("diagnose error", e);
     $("diagOut").classList.add("hide");

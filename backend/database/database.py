@@ -1,15 +1,16 @@
+
+from pathlib import Path
 from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-
-DATABASE_URL = "sqlite:///./kisanmitra.db"
-
+DB_PATH = Path(__file__).resolve().parents[1] / "kisanmitra.db"
+DATABASE_URL = URL.create("sqlite", database=str(DB_PATH))
 
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
-
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -17,13 +18,10 @@ SessionLocal = sessionmaker(
     bind=engine
 )
 
-
 Base = declarative_base()
-
 
 def get_db():
     db = SessionLocal()
-
     try:
         yield db
     finally:

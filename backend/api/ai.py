@@ -1,6 +1,8 @@
 import logging
+import re
+from io import BytesIO
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from api.deps import get_current_user
@@ -10,6 +12,7 @@ logger = logging.getLogger("uvicorn.error")
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+TTS_LANGS = {"gu": "gu", "hi": "hi", "en": "en"}
 
 
 router = APIRouter(
@@ -29,6 +32,11 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = Field(default_factory=list, max_length=20)
 
 
+class SpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=3000)
+    language: str = "gu"
+
+
 def _handle_ai_error(e: Exception):
     logger.exception("AI error: %s", e)
     if "503" in str(e) or "429" in str(e):
@@ -40,6 +48,14 @@ def _handle_ai_error(e: Exception):
         status_code=500,
         detail="AI જવાબ આપી શક્યું નથી. થોડી વાર પછી ફરી પ્રયત્ન કરો."
     )
+
+
+def _clean_for_speech(text: str) -> str:
+    text = text.replace("**", "")
+    text = re.sub(r"^[ \t]*[*\-•][ \t]+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"[#_`]", "", text)
+    text = re.sub(r"\n{2,}", "\n", text)
+    return text.strip()
 
 
 @router.post("/chat")
@@ -106,3 +122,37 @@ def diagnose(
         "status": "success",
         "reply": reply
     }
+
+
+@router.post("/speak")
+def speak(
+    request: SpeakRequest,
+    current_user=Depends(get_current_user),
+):
+    """લખાણને અવાજ (MP3) માં ફેરવે છે (gTTS)."""
+    text = _clean_for_speech(request.text)
+    if not text:
+        raise HTTPException(status_code=400, detail="બોલવા માટે લખાણ ખાલી છે.")
+
+    try:
+        from gtts import gTTS
+        logger.info("gTTS imported successfully")
+    except ImportError as e:
+        logger.exception("gTTS import failed")
+        raise HTTPException(
+            status_code=503,
+            detail=f"gTTS import failed: {e}"
+        )
+
+    lang = TTS_LANGS.get(request.language, "gu")
+    try:
+        buffer = BytesIO()
+        gTTS(text=text, lang=lang).write_to_fp(buffer)
+    except Exception as e:
+        logger.exception("TTS error: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="અવાજ બનાવી શકાયો નથી. થોડી વાર પછી ફરી પ્રયત્ન કરો."
+        )
+
+    return Response(content=buffer.getvalue(), media_type="audio/mpeg")
