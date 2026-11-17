@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
@@ -19,6 +18,12 @@ SessionLocal = sessionmaker(
 )
 
 Base = declarative_base()
+
+
+def create_db_and_tables() -> None:
+    """Create all database tables required by the application."""
+    Base.metadata.create_all(bind=engine)
+
 
 def get_db():
     db = SessionLocal()
