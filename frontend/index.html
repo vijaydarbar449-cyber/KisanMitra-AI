@@ -27,7 +27,7 @@
   .err { color:#b71c1c; font-size:.9rem; min-height:1.2em; }
   .hide { display:none; }
   .tabs { display:flex; gap:8px; margin-bottom:10px; }
-  .tabs button { flex:1; }
+  .tabs button { flex:1; padding:10px 6px; }
   .tabs button.active { background:var(--g); color:#fff; }
   .note { font-size:.8rem; color:#556; margin-top:10px; }
   #micBtn { background:#fff; color:var(--g); border:1px solid var(--g); font-size:1.2rem; padding:10px 12px; }
@@ -39,6 +39,21 @@
   .opts input[type=checkbox] { width:auto; }
   .speakBtn { display:block; margin-top:8px; padding:6px 12px; font-size:.9rem; background:#fff; color:var(--g); border:1px solid var(--g); }
   .speakBtn.speaking { background:#c62828; color:#fff; border-color:#c62828; }
+  .wnow { background:var(--gl); border:1px solid var(--bd); border-radius:10px; padding:10px 12px; line-height:1.6; }
+  .wtable { overflow-x:auto; }
+  .wtable table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  .wtable th, .wtable td { border:1px solid var(--bd); padding:6px 8px; text-align:center; white-space:nowrap; }
+  .wtable th { background:var(--gl); }
+  #wAdvice { max-width:100%; }
+  .acwrap { position:relative; }
+  .suggest { position:absolute; left:0; right:0; top:100%; z-index:5; background:#fff; border:1px solid var(--bd); border-radius:8px; max-height:260px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.12); }
+  .suggest div { padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--bd); }
+  .suggest div:last-child { border-bottom:0; }
+  .suggest div:hover { background:var(--gl); }
+  .suggest div.none { cursor:default; color:#556; }
+  .suggest div.none:hover { background:#fff; }
+  .suggest small { display:block; color:#556; }
+  .picked { background:var(--gl); border:1px solid var(--bd); border-radius:8px; padding:8px 12px; font-size:.9rem; }
 </style>
 </head>
 <body>
@@ -61,11 +76,12 @@
     <div id="authErr" class="err"></div>
   </section>
 
-  <!-- ચેટ -->
+  <!-- મુખ્ય -->
   <section id="chatView" class="card hide">
     <div class="tabs">
-      <button id="tabChat" class="active">💬 પ્રશ્ન પૂછો</button>
-      <button id="tabPhoto" class="secondary">📷 ફોટો નિદાન</button>
+      <button id="tabChat" class="active">💬 પ્રશ્ન</button>
+      <button id="tabPhoto" class="secondary">📷 ફોટો</button>
+      <button id="tabWeather" class="secondary">🌦️ હવામાન</button>
     </div>
     <div class="opts">
       <select id="lang">
@@ -92,6 +108,23 @@
       <button id="diagBtn">નિદાન કરો</button>
       <div id="diagOut" class="msg model hide"></div>
     </div>
+
+    <div id="weatherPane" class="hide stack">
+      <div class="acwrap">
+        <input id="wLoc" placeholder="ગામ/શહેરનું નામ લખો (અંગ્રેજીમાં, 3+ અક્ષર), દા.ત. Gondal" autocomplete="off">
+        <div id="wSuggest" class="suggest hide"></div>
+      </div>
+      <div id="wPicked" class="picked hide"></div>
+      <button id="gpsBtn" class="secondary">📍 મારું સ્થાન વાપરો</button>
+      <input id="wCrop" placeholder="પાક (વૈકલ્પિક), દા.ત. કપાસ">
+      <button id="wBtn">હવામાન સલાહ મેળવો</button>
+      <div id="wOut" class="hide stack">
+        <div id="wNow" class="wnow"></div>
+        <div class="wtable"><table id="wTable"></table></div>
+        <div id="wAdvice" class="msg model"></div>
+      </div>
+    </div>
+
     <div id="chatErr" class="err"></div>
     <div class="note">AI ની સલાહ માર્ગદર્શન માટે છે. ગંભીર સમસ્યા માટે નજીકના કૃષિ વિજ્ઞાન કેન્દ્ર (KVK) કે કૃષિ અધિકારીનો સંપર્ક કરો.</div>
   </section>
@@ -132,6 +165,8 @@ function logout() {
   sessionStorage.removeItem("km_token");
   chatHistory = [];
   $("log").innerHTML = "";
+  $("wOut").classList.add("hide");
+  setPicked(null);
   showView();
 }
 
@@ -205,17 +240,20 @@ $("authBtn").onclick = async () => {
 $("logoutBtn").onclick = logout;
 
 // ---------- ટૅબ ----------
-function setTab(photo) {
+function setTab(name) {
   stopListening();
   stopSpeaking();
-  $("chatPane").classList.toggle("hide", photo);
-  $("photoPane").classList.toggle("hide", !photo);
-  $("tabChat").className = photo ? "secondary" : "active";
-  $("tabPhoto").className = photo ? "active" : "secondary";
+  $("chatPane").classList.toggle("hide", name !== "chat");
+  $("photoPane").classList.toggle("hide", name !== "photo");
+  $("weatherPane").classList.toggle("hide", name !== "weather");
+  [["chat", "tabChat"], ["photo", "tabPhoto"], ["weather", "tabWeather"]].forEach(([k, id]) => {
+    $(id).className = k === name ? "active" : "secondary";
+  });
   $("chatErr").textContent = "";
 }
-$("tabChat").onclick = () => setTab(false);
-$("tabPhoto").onclick = () => setTab(true);
+$("tabChat").onclick = () => setTab("chat");
+$("tabPhoto").onclick = () => setTab("photo");
+$("tabWeather").onclick = () => setTab("weather");
 
 // ---------- 🎤 અવાજથી પ્રશ્ન ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -301,7 +339,6 @@ function plainText(s) {
     .replace(/\n{2,}/g, "\n");
 }
 
-// લાંબું લખાણ નાના ટુકડામાં (Chrome લાંબા લખાણમાં વચ્ચે અટકી જાય છે)
 function splitChunks(text) {
   const parts = text.split(/(?<=[.!?।\n])\s*/).filter((p) => p.trim());
   const chunks = [];
@@ -368,7 +405,6 @@ function speak(text, btn) {
   });
 }
 
-// અવાજોની યાદી મોડી લોડ થાય છે
 if (TTS) { TTS.onvoiceschanged = () => {}; TTS.getVoices(); }
 
 function addSpeakButton(div, text) {
@@ -469,6 +505,186 @@ $("diagBtn").onclick = async () => {
     $("diagBtn").disabled = false;
   }
 };
+
+// ---------- 🌦️ હવામાન સલાહ ----------
+let picked = null;       // પસંદ કરેલું સ્થળ (યાદીમાંથી કે GPS)
+let sugTimer = null;
+let sugSeq = 0;
+
+function dayLabel(iso) {
+  const p = String(iso || "").split("-");
+  return p.length === 3 ? p[2] + "/" + p[1] : iso;
+}
+function val(v, unit) {
+  return v === null || v === undefined ? "-" : v + unit;
+}
+function placeTitle(p) {
+  return [p.name, p.district, p.state].filter(Boolean).join(", ");
+}
+
+function setPicked(p) {
+  picked = p;
+  const box = $("wPicked");
+  if (p) {
+    box.textContent = p.gps
+      ? "✅ તમારું સ્થાન (GPS): " + p.latitude + ", " + p.longitude
+      : "✅ પસંદ કરેલ: " + placeTitle(p);
+    box.classList.remove("hide");
+  } else {
+    box.textContent = "";
+    box.classList.add("hide");
+  }
+}
+
+function hideSuggest() {
+  $("wSuggest").classList.add("hide");
+  $("wSuggest").innerHTML = "";
+}
+
+function renderSuggest(results) {
+  const box = $("wSuggest");
+  box.innerHTML = "";
+  if (!results.length) {
+    const none = document.createElement("div");
+    none.className = "none";
+    none.textContent = "કંઈ મળ્યું નહીં. નજીકના શહેરનું નામ લખો અથવા 📍 મારું સ્થાન વાપરો.";
+    box.appendChild(none);
+  } else {
+    results.forEach((p) => {
+      const item = document.createElement("div");
+      const title = document.createElement("b");
+      title.textContent = p.name || "";
+      const sub = document.createElement("small");
+      sub.textContent = [p.taluka, p.district, p.state].filter(Boolean).join(" · ");
+      item.appendChild(title);
+      item.appendChild(sub);
+      item.onclick = () => {
+        setPicked(p);
+        $("wLoc").value = p.name || "";
+        hideSuggest();
+      };
+      box.appendChild(item);
+    });
+  }
+  box.classList.remove("hide");
+}
+
+$("wLoc").addEventListener("input", () => {
+  setPicked(null);
+  clearTimeout(sugTimer);
+  const q = $("wLoc").value.trim();
+  if (q.length < 3) { hideSuggest(); return; }
+  sugTimer = setTimeout(async () => {
+    const seq = ++sugSeq;
+    try {
+      const data = await api("/weather/places?q=" + encodeURIComponent(q), {}, 15000);
+      if (seq !== sugSeq) return;
+      renderSuggest(data.results || []);
+    } catch (e) {
+      if (seq === sugSeq) hideSuggest();
+    }
+  }, 350);
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".acwrap")) hideSuggest();
+});
+
+$("gpsBtn").onclick = () => {
+  $("chatErr").textContent = "";
+  if (!navigator.geolocation) {
+    $("chatErr").textContent = "આ બ્રાઉઝરમાં સ્થાનની સુવિધા નથી.";
+    return;
+  }
+  $("gpsBtn").disabled = true;
+  $("gpsBtn").textContent = "સ્થાન શોધી રહ્યો છું...";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      setPicked({
+        name: "તમારું સ્થાન",
+        gps: true,
+        latitude: Number(pos.coords.latitude.toFixed(4)),
+        longitude: Number(pos.coords.longitude.toFixed(4)),
+      });
+      $("wLoc").value = "";
+      hideSuggest();
+      $("gpsBtn").disabled = false;
+      $("gpsBtn").textContent = "📍 મારું સ્થાન વાપરો";
+    },
+    (err) => {
+      const msg = {
+        1: "સ્થાનની પરવાનગી આપો (સરનામા પટ્ટીમાં 🔒 આઇકન દબાવી Location ને Allow કરો).",
+        2: "સ્થાન મળ્યું નહીં. GPS/ઇન્ટરનેટ ચાલુ છે કે તપાસો.",
+        3: "સ્થાન શોધવામાં બહુ સમય લાગ્યો. ફરી પ્રયત્ન કરો.",
+      };
+      $("chatErr").textContent = msg[err.code] || "સ્થાન મળી શક્યું નહીં.";
+      $("gpsBtn").disabled = false;
+      $("gpsBtn").textContent = "📍 મારું સ્થાન વાપરો";
+    },
+    { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+  );
+};
+
+$("wBtn").onclick = async () => {
+  stopSpeaking();
+  hideSuggest();
+  const loc = $("wLoc").value.trim();
+  $("chatErr").textContent = "";
+
+  const body = { crop: $("wCrop").value.trim(), language: $("lang").value };
+  if (picked) {
+    body.latitude = picked.latitude;
+    body.longitude = picked.longitude;
+    body.place_name = picked.name || "";
+  } else if (loc.length >= 2) {
+    body.location = loc;
+  } else {
+    $("chatErr").textContent = "ગામ/શહેરનું નામ લખો અથવા 📍 મારું સ્થાન વાપરો.";
+    return;
+  }
+
+  $("wBtn").disabled = true;
+  $("wBtn").textContent = "માહિતી લઈ રહ્યો છું...";
+  $("wOut").classList.add("hide");
+  try {
+    const data = await api("/weather/advice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const p = data.place;
+    const label = picked && picked.gps
+      ? "તમારું સ્થાન (" + p.latitude + ", " + p.longitude + ")"
+      : placeTitle(p);
+    const c = data.current;
+    $("wNow").innerHTML =
+      "📍 <b>" + esc(label) + "</b><br>" +
+      "હાલ: " + esc(val(c.temp_c, "°C")) + " · ભેજ " + esc(val(c.humidity_pct, "%")) +
+      " · પવન " + esc(val(c.wind_kmh, " km/h"));
+
+    let rows = "<tr><th>તારીખ</th><th>તાપમાન</th><th>વરસાદ</th><th>શક્યતા</th><th>પવન</th></tr>";
+    data.days.forEach((d) => {
+      rows += "<tr><td>" + esc(dayLabel(d.date)) + "</td>" +
+        "<td>" + esc(val(d.temp_min_c, "°")) + " - " + esc(val(d.temp_max_c, "°")) + "</td>" +
+        "<td>" + esc(val(d.rain_mm, " mm")) + "</td>" +
+        "<td>" + esc(val(d.rain_chance_pct, "%")) + "</td>" +
+        "<td>" + esc(val(d.wind_max_kmh, " km/h")) + "</td></tr>";
+    });
+    $("wTable").innerHTML = rows;
+
+    $("wOut").classList.remove("hide");
+    showReply($("wAdvice"), data.advice);
+  } catch (e) {
+    console.error("weather error", e);
+    $("chatErr").textContent = e.message;
+  } finally {
+    $("wBtn").disabled = false;
+    $("wBtn").textContent = "હવામાન સલાહ મેળવો";
+  }
+};
+$("wLoc").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("wBtn").click(); }
+});
 
 showView();
 </script>
