@@ -21,7 +21,7 @@ Base = declarative_base()
 
 
 def create_db_and_tables() -> None:
-    """Create all database tables required by the application."""
+    """Create all database tables required by the app."""
     Base.metadata.create_all(bind=engine)
 
 
