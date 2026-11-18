@@ -33,6 +33,9 @@ def verify_password(
 # JWT Configuration
 # -------------------------
 
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 SECRET_KEY = os.getenv("SECRET_KEY", "kisanmitra-ai-dev-secret-key-change-later")
 
 ALGORITHM = "HS256"
