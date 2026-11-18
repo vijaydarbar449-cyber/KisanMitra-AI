@@ -10,8 +10,14 @@ from google.genai import types
 ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(ENV_PATH, override=True)
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise RuntimeError(
+        "GEMINI_API_KEY is missing. Add it to the .env file at the project root or set it in the environment."
+    )
+
 client = genai.Client(
-    api_key=os.environ["GEMINI_API_KEY"],
+    api_key=GEMINI_API_KEY,
     http_options=types.HttpOptions(timeout=60000),  # 60 સેકન્ડ
 )
 
@@ -43,7 +49,7 @@ IMAGE_PROMPT = (
     "2) તેના લક્ષણો ફોટામાં શું દેખાય છે, "
     "3) ઘરેલું/જૈવિક ઉપાય, "
     "4) રાસાયણિક દવાનું નામ (પ્રમાણ ન આપો, લેબલ વાંચવા કહો). "
-    "ફોટો સ્પષ્ટ ન હોય કે છોડનો ન હોય તો તે જણાવો અને ખાતરીપૂર્વક નિદાન ન કરો. "
+    "ફોટો સ્પષ્ટ ન હોય કે છોડનો ન હોય તો તે જણાવો და ખાતરીપૂર્વક નિદાન ન કરો. "
     "અંતે કૃષિ અધિકારી કે KVK ની સલાહ લેવા કહો."
 )
 

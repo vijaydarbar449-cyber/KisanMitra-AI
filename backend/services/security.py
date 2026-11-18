@@ -1,6 +1,8 @@
-from passlib.context import CryptContext
+import os
 from datetime import datetime, timedelta, timezone
+
 from jose import jwt
+from passlib.context import CryptContext
 
 
 pwd_context = CryptContext(
@@ -31,7 +33,7 @@ def verify_password(
 # JWT Configuration
 # -------------------------
 
-SECRET_KEY = "kisanmitra-ai-secret-key-change-later"
+SECRET_KEY = os.getenv("SECRET_KEY", "kisanmitra-ai-dev-secret-key-change-later")
 
 ALGORITHM = "HS256"
 
@@ -43,7 +45,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # -------------------------
 
 def create_access_token(data: dict) -> str:
-
     to_encode = data.copy()
 
     expire = datetime.now(timezone.utc) + timedelta(
