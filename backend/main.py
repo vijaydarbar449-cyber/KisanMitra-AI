@@ -9,6 +9,7 @@ from api.auth import router as auth_router
 from api.profile import router as profile_router
 from api.ai import router as ai_router
 from api.weather import router as weather_router
+from api.schemes import router as schemes_router
 
 
 app = FastAPI(
@@ -45,6 +46,7 @@ app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(ai_router)
 app.include_router(weather_router)
+app.include_router(schemes_router)
 
 
 # ============================================================

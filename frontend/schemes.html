@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>સરકારી યોજનાઓ | KisanMitra AI</title>
+<style>
+  :root { --g:#2e7d32; --gl:#e8f5e9; --bd:#d7e3d8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans Gujarati", sans-serif; background:#f4f8f4; color:#1b2b1c; }
+  header { background:var(--g); color:#fff; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  header h1 { font-size:1.1rem; margin:0; }
+  header a { color:#fff; text-decoration:none; font-size:.95rem; }
+  main { max-width:720px; margin:0 auto; padding:12px; display:flex; flex-direction:column; gap:12px; }
+  .card { background:#fff; border:1px solid var(--bd); border-radius:12px; padding:16px; }
+  .tips { background:var(--gl); }
+  .tips ul { margin:6px 0 0; padding-left:20px; }
+  details { background:#fff; border:1px solid var(--bd); border-radius:12px; padding:12px 16px; }
+  details > summary { cursor:pointer; font-weight:600; list-style:none; }
+  details > summary small { display:block; font-weight:400; color:#556; margin-top:2px; }
+  .tag { display:inline-block; background:var(--gl); color:var(--g); border-radius:999px; padding:1px 10px; font-size:.78rem; margin-left:6px; font-weight:500; }
+  details h4 { margin:12px 0 4px; color:var(--g); }
+  details ul, details ol { margin:0; padding-left:20px; line-height:1.6; }
+  .caution { background:#fff8e1; border:1px solid #ffe08a; border-radius:8px; padding:8px 12px; margin-top:10px; font-size:.9rem; }
+  a.official { display:inline-block; margin-top:10px; background:var(--g); color:#fff; text-decoration:none; padding:8px 14px; border-radius:8px; }
+  select, textarea, button { font:inherit; padding:10px; border-radius:8px; border:1px solid var(--bd); }
+  textarea { width:100%; }
+  button { background:var(--g); color:#fff; border:0; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .err { color:#b71c1c; font-size:.9rem; min-height:1.2em; margin-top:6px; }
+  .answer { background:var(--gl); border:1px solid var(--bd); border-radius:12px; padding:10px 12px; line-height:1.6; margin-top:10px; }
+  .note { font-size:.8rem; color:#556; }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏛️ સરકારી યોજનાઓ</h1>
+  <a href="/app/">← એપ પર પાછા</a>
+</header>
+
+<main>
+  <div class="card tips">
+    <div id="verified" class="note"></div>
+    <ul id="tips"></ul>
+  </div>
+
+  <div id="list"></div>
+  <div id="listErr" class="err"></div>
+
+  <section class="card">
+    <h3 style="margin-top:0">🤖 યોજના વિશે પ્રશ્ન પૂછો</h3>
+    <div class="row">
+      <select id="scheme"><option value="">બધી યોજનાઓ</option></select>
+      <select id="lang">
+        <option value="gu">ગુજરાતી</option>
+        <option value="hi">हिन्दी</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <div id="loginNote" class="note hide">પ્રશ્ન પૂછવા માટે પહેલાં <a href="/app/">એપમાં લૉગિન</a> કરો.</div>
+    <textarea id="q" rows="3" placeholder="દા.ત. PM-KISAN ના પૈસા કેમ નથી આવ્યા? / પાક વીમા માટે શું કરવું?"></textarea>
+    <div class="row" style="margin-top:8px"><button id="askBtn">પૂછો</button></div>
+    <div id="askErr" class="err"></div>
+    <div id="answer" class="answer hide"></div>
+    <div class="note" style="margin-top:10px">AI નો જવાબ ઉપરની ચકાસેલી માહિતી પર આધારિત છે. અરજી પહેલાં સત્તાવાર પોર્ટલ કે તાલુકા ખેતી કચેરીમાં ખાતરી કરો.</div>
+  </section>
+</main>
+
+<script>
+const API = "/api/v1";
+const $ = (id) => document.getElementById(id);
+const token = sessionStorage.getItem("km_token") || "";
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function fmt(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/^[ \t]*[*-][ \t]+/gm, "• ")
+    .replace(/\n/g, "<br>");
+}
+function el(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+function addList(parent, title, items, ordered) {
+  if (!items || !items.length) return;
+  parent.appendChild(el("h4", title));
+  const list = el(ordered ? "ol" : "ul");
+  items.forEach((t) => list.appendChild(el("li", t)));
+  parent.appendChild(list);
+}
+
+function renderScheme(s) {
+  const d = el("details");
+  const sum = el("summary");
+  sum.appendChild(document.createTextNode(s.name));
+  sum.appendChild(el("span", s.tag, "tag"));
+  sum.appendChild(el("small", s.summary));
+  d.appendChild(sum);
+
+  d.appendChild(el("h4", "💰 લાભ"));
+  d.appendChild(el("div", s.benefit));
+  addList(d, "👤 કોણ પાત્ર", s.who, false);
+  addList(d, "📝 અરજી કેવી રીતે", s.how, true);
+  addList(d, "📄 દસ્તાવેજો", s.docs, false);
+  if (s.helpline) {
+    d.appendChild(el("h4", "☎️ હેલ્પલાઇન"));
+    d.appendChild(el("div", s.helpline));
+  }
+  if (s.caution) d.appendChild(el("div", "⚠️ " + s.caution, "caution"));
+  if (s.link && s.link.startsWith("https://")) {
+    const a = el("a", "સત્તાવાર પોર્ટલ ખોલો", "official");
+    a.href = s.link;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    d.appendChild(a);
+  }
+  return d;
+}
+
+async function loadSchemes() {
+  try {
+    const res = await fetch(API + "/schemes");
+    const data = await res.json();
+    if (!res.ok) throw new Error();
+    $("verified").textContent = "માહિતીની છેલ્લી ચકાસણી: " + data.last_verified;
+    (data.tips || []).forEach((t) => $("tips").appendChild(el("li", t)));
+    const list = $("list");
+    list.style.display = "flex";
+    list.style.flexDirection = "column";
+    list.style.gap = "10px";
+    data.schemes.forEach((s) => {
+      list.appendChild(renderScheme(s));
+      const opt = el("option", s.name);
+      opt.value = s.id;
+      $("scheme").appendChild(opt);
+    });
+  } catch (e) {
+    $("listErr").textContent = "યોજનાઓની યાદી લોડ થઈ શકી નથી. સર્વર ચાલુ છે કે તપાસો.";
+  }
+}
+
+$("askBtn").onclick = async () => {
+  const question = $("q").value.trim();
+  $("askErr").textContent = "";
+  if (!token) { $("loginNote").classList.remove("hide"); return; }
+  if (question.length < 2) { $("askErr").textContent = "પહેલાં તમારો પ્રશ્ન લખો."; return; }
+
+  $("askBtn").disabled = true;
+  $("answer").classList.remove("hide");
+  $("answer").textContent = "જવાબ તૈયાર કરી રહ્યો છું...";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  try {
+    const res = await fetch(API + "/schemes/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ question, language: $("lang").value, scheme_id: $("scheme").value }),
+      signal: ctrl.signal,
+    });
+    if (res.status === 401) {
+      $("answer").classList.add("hide");
+      $("loginNote").classList.remove("hide");
+      $("askErr").textContent = "ફરી લૉગિન કરો.";
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "જવાબ મળ્યો નહીં.");
+    $("answer").innerHTML = fmt(data.answer);
+  } catch (e) {
+    $("answer").classList.add("hide");
+    $("askErr").textContent = e.name === "AbortError" ? "જવાબ આવવામાં બહુ સમય લાગ્યો. ફરી પ્રયત્ન કરો." : e.message;
+  } finally {
+    clearTimeout(timer);
+    $("askBtn").disabled = false;
+  }
+};
+
+if (!token) $("loginNote").classList.remove("hide");
+loadSchemes();
+</script>
+</body>
+</html>
