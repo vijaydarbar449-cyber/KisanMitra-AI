@@ -89,6 +89,7 @@ def chat(
 def diagnose(
     image: UploadFile = File(...),
     question: str = Form(""),
+    language: str = Form("gu"),
     current_user=Depends(get_current_user),
 ):
     """પાકના પાનનો ફોટો અપલોડ કરો, AI રોગ/જીવાતની ઓળખ આપશે."""
@@ -114,6 +115,7 @@ def diagnose(
             image_bytes=image_bytes,
             mime_type=image.content_type,
             question=question.strip(),
+            language=language,
         )
     except Exception as e:
         _handle_ai_error(e)
@@ -136,13 +138,8 @@ def speak(
 
     try:
         from gtts import gTTS
-        logger.info("gTTS imported successfully")
-    except ImportError as e:
-        logger.exception("gTTS import failed")
-        raise HTTPException(
-            status_code=503,
-            detail=f"gTTS import failed: {e}"
-        )
+    except ImportError:
+        raise HTTPException(status_code=503, detail="અવાજની સુવિધા ઇન્સ્ટોલ થઈ નથી.")
 
     lang = TTS_LANGS.get(request.language, "gu")
     try:

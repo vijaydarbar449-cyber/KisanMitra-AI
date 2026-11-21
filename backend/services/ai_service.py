@@ -13,7 +13,8 @@ load_dotenv(ENV_PATH, override=True)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise RuntimeError(
-        "GEMINI_API_KEY is missing. Add it to the .env file at the project root or set it in the environment."
+        "GEMINI_API_KEY is missing. Add it to the .env file at the project root "
+        "or set it in the environment."
     )
 
 client = genai.Client(
@@ -27,8 +28,9 @@ MAX_HISTORY_TURNS = 10      # પાછલા કેટલા સંદેશા
 MAX_TURN_CHARS = 2000       # દરેક સંદેશાની મહત્તમ લંબાઈ
 
 SYSTEM_PROMPT = (
-    "તમે KisanMitra AI છો, ગુજરાતના ખેડૂતો માટેના મદદગાર. "
-    "હંમેશા સરળ ગુજરાતીમાં, ટૂંકા અને વ્યવહારુ જવાબ આપો. "
+    "તમે KisanMitra AI છો, ભારતના ખેડૂતો માટેના મદદગાર. "
+    "ખેડૂતે જે ભાષા પસંદ કરી હોય (સંદેશમાં જણાવેલી), તે જ ભાષામાં સરળ, ટૂંકા અને "
+    "વ્યવહારુ જવાબ આપો. ભાષા ન જણાવી હોય તો ગુજરાતીમાં આપો. "
     "પાક, રોગ, જીવાત, ખાતર, પાણી અને હવામાન વિશે મદદ કરો. "
     "રાસાયણિક દવાનું ચોક્કસ પ્રમાણ (મિલી/ગ્રામ) ન આપો; દવાનું નામ જણાવો અને "
     "પ્રમાણ માટે દવાના લેબલ કે કૃષિ અધિકારીની સલાહ લેવા કહો. "
@@ -37,19 +39,29 @@ SYSTEM_PROMPT = (
     "ખેતી સિવાયના વિષયો પર નમ્રતાથી ના પાડો."
 )
 
+# ભાષાનો કોડ -> પ્રોમ્પ્ટમાં વપરાતું નામ
 LANGUAGE_NAMES = {
-    "gu": "ગુજરાતી",
-    "hi": "હિન્દી",
+    "gu": "ગુજરાતી (Gujarati)",
+    "hi": "Hindi (हिन्दी)",
     "en": "English",
+    "mr": "Marathi (मराठी)",
+    "pa": "Punjabi (ਪੰਜਾਬੀ)",
+    "bn": "Bengali (বাংলা)",
+    "ta": "Tamil (தமிழ்)",
+    "te": "Telugu (తెలుగు)",
+    "kn": "Kannada (ಕನ್ನಡ)",
+    "ml": "Malayalam (മലയാളം)",
+    "or": "Odia (ଓଡ଼ିଆ)",
 }
+DEFAULT_LANGUAGE = "ગુજરાતી (Gujarati)"
 
 IMAGE_PROMPT = (
-    "આ પાક/છોડના પાનનો ફોટો છે. સરળ ગુજરાતીમાં જણાવો: "
+    "આ પાક/છોડના પાનનો ફોટો છે. સરળ ભાષામાં જણાવો: "
     "1) છોડમાં કયો રોગ, જીવાત કે ઉણપ હોઈ શકે, "
     "2) તેના લક્ષણો ફોટામાં શું દેખાય છે, "
     "3) ઘરેલું/જૈવિક ઉપાય, "
     "4) રાસાયણિક દવાનું નામ (પ્રમાણ ન આપો, લેબલ વાંચવા કહો). "
-    "ફોટો સ્પષ્ટ ન હોય કે છોડનો ન હોય તો તે જણાવો და ખાતરીપૂર્વક નિદાન ન કરો. "
+    "ફોટો સ્પષ્ટ ન હોય કે છોડનો ન હોય તો તે જણાવો અને ખાતરીપૂર્વક નિદાન ન કરો. "
     "અંતે કૃષિ અધિકારી કે KVK ની સલાહ લેવા કહો."
 )
 
@@ -78,7 +90,7 @@ def ask_gemini(prompt: str, tries: int = 3) -> str:
 
 def generate_ai_response(message: str, language: str = "gu", history=None) -> str:
     """ai.py આ ફંક્શન બોલાવે છે. history = [{"role": "user"/"model", "text": "..."}]"""
-    lang = LANGUAGE_NAMES.get(language, "ગુજરાતી")
+    lang = LANGUAGE_NAMES.get(language, DEFAULT_LANGUAGE)
 
     contents = []
     for turn in (history or [])[-MAX_HISTORY_TURNS:]:
@@ -102,11 +114,18 @@ def generate_ai_response(message: str, language: str = "gu", history=None) -> st
     return _call_gemini(contents)
 
 
-def analyze_crop_image(image_bytes: bytes, mime_type: str = "image/jpeg", question: str = "") -> str:
+def analyze_crop_image(
+    image_bytes: bytes,
+    mime_type: str = "image/jpeg",
+    question: str = "",
+    language: str = "gu",
+) -> str:
     """પાકના ફોટા પરથી રોગની ઓળખ."""
+    lang = LANGUAGE_NAMES.get(language, DEFAULT_LANGUAGE)
     prompt = IMAGE_PROMPT
     if question:
         prompt += f"\nખેડૂતનો પ્રશ્ન: {question}"
+    prompt += f"\nજવાબ {lang} ભાષામાં આપો."
 
     contents = [
         types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
