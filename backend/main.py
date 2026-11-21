@@ -1,3 +1,5 @@
+from database.database import create_db_and_tables
+from models.farm import Farm
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -10,6 +12,8 @@ from api.profile import router as profile_router
 from api.ai import router as ai_router
 from api.weather import router as weather_router
 from api.schemes import router as schemes_router
+from api.farm import router as farm_router
+from api.i18n import router as i18n_router
 
 
 app = FastAPI(
@@ -23,7 +27,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
-
+@app.on_event("startup")
+def startup_event():
+    create_db_and_tables()
 
 # ============================================================
 # CORS
@@ -47,6 +53,8 @@ app.include_router(profile_router)
 app.include_router(ai_router)
 app.include_router(weather_router)
 app.include_router(schemes_router)
+app.include_router(farm_router)
+app.include_router(i18n_router)
 
 
 # ============================================================
